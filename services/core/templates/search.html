@@ -1,0 +1,76 @@
+<!-- templates/search.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Search</title>
+</head>
+<body>
+    <h1>Search</h1>
+    <form id="search-form">
+        <input type="text" id="search-input" placeholder="Enter query" required>
+        <button type="submit">Search</button>
+    </form>
+    <div id="search-results"></div>
+
+    <script>
+        document.getElementById('search-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const query = document.getElementById('search-input').value;
+            const resultsDiv = document.getElementById('search-results');
+            resultsDiv.innerHTML = '<p>Searching...</p>';
+
+            try {
+                const response = await fetch('http://127.0.0.1:8000/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ query })
+                });
+
+                const data = await response.json();
+
+                // Clear previous results
+                resultsDiv.innerHTML = '';
+
+                // Handle both array and object responses
+                if (Array.isArray(data)) {
+                    if (data.length === 0) {
+                        resultsDiv.innerHTML += '<p>No results found.</p>';
+
+                    } else {
+                        data.forEach(result => {
+                            appendResult(result);
+                        });
+                    }
+                } else if (typeof data === 'object' && data !== null) {
+                    appendResult(data);
+                } else {
+                    resultsDiv.innerHTML += `<p>Unexpected response: ${JSON.stringify(data)}</p>`;
+                }
+            } catch (error) {
+                resultsDiv.innerHTML = `<p>Error: ${error.message}</p>`;
+            }
+
+            function appendResult(result) {
+                // Handle both possible result structures
+                const frameId = result.frame_id
+                const score = result.score
+
+                if (!frameId || !score) {
+                    resultsDiv.innerHTML += `<p>Invalid result format: ${JSON.stringify(result)}</p>`;
+                    return;
+                }
+
+                resultsDiv.innerHTML += `
+                    <div class="result-item">
+                        <p>Frame ID: ${frameId}</p>
+                        <p>Score: ${score ? score.toFixed(6) : 'NaN'}</p>
+                        <img src="static/frames/${frameId}.jpg" alt="Frame ${frameId}" style="max-width: 200px; height: auto;">
+                    </div>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>
