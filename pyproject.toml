@@ -1,0 +1,16 @@
+[project]
+name = "fps"
+version = "0.1.0"
+description = "None"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "faiss-cpu>=1.11.0",
+    "flask>=3.1.1",
+    "flask-cors>=6.0.1",
+    "h5py>=3.14.0",
+    "more-itertools>=10.7.0",
+    "open-clip-torch>=2.32.0",
+    "pillow>=11.2.1",
+    "torch>=2.7.1",
+]
