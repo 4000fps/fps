@@ -11,6 +11,8 @@ dependencies = [
     "h5py>=3.14.0",
     "more-itertools>=10.7.0",
     "open-clip-torch>=2.32.0",
+    "pandas>=2.3.0",
     "pillow>=11.2.1",
+    "scikit-image>=0.25.2",
     "torch>=2.7.1",
 ]
