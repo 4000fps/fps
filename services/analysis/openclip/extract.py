@@ -12,8 +12,14 @@ import torch.utils
 from PIL import Image
 
 from ...common.extractors import BaseFrameExtractor
-from ...common.utils import setup_logging
 from ...common.types import Record
+from ...common.utils import setup_logging
+
+setup_logging()
+logger = logging.getLogger("services.analysis.openclip.extract")
+
+# Suppress PIL TiffImagePlugin DEBUG messages
+logging.getLogger("PIL.TiffImagePlugin").setLevel(logging.WARNING)
 
 
 class FrameListDataset(torch.utils.data.Dataset):
@@ -171,16 +177,9 @@ class OpenCLIPExtractor(BaseFrameExtractor):
 
 
 if __name__ == "__main__":
-    # Set up logging
-    setup_logging()
-    logger = logging.getLogger("services.analysis.openclip.extract")
-
-    # Suppress PIL TiffImagePlugin DEBUG messages
-    logging.getLogger("PIL.TiffImagePlugin").setLevel(logging.WARNING)
-
-    # Parse command line arguments and run the extractor
     parser = argparse.ArgumentParser(description="OpenCLIP Frame Extractor")
     OpenCLIPExtractor.add_arguments(parser)
     args = parser.parse_args()
+
     extractor = OpenCLIPExtractor(args)
     extractor.run()

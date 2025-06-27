@@ -10,6 +10,9 @@ from .files import HDF5File
 from .types import FrameData, Record
 from .utils import setup_logging
 
+setup_logging()
+logger = logging.getLogger("services.common.extractors")
+
 
 class BaseFrameExtractor:
     """Base class for frame extractors."""
@@ -118,10 +121,10 @@ class BaseFrameExtractor:
         )
         for video_id, group in itertools.groupby(frame_groups, key=lambda x: x[0]):
             with self.create_output_file(video_id) as file:
-                not_extracted = []
+                not_extracted: list[FrameData] = []
                 for video_id, frame_id, frame_path in group:
                     if frame_id not in file:
-                        not_extracted.append((video_id, frame_id, frame_path))
+                        not_extracted.append(FrameData(video_id, frame_id, frame_path))
 
             logger.info(
                 f"Video '{video_id}' has {len(not_extracted)} frames not extracted."
@@ -173,6 +176,4 @@ class BaseFrameExtractor:
 
 
 if __name__ == "__main__":
-    setup_logging()
-    logger = logging.getLogger("services.common.extractors")
-    
+    pass

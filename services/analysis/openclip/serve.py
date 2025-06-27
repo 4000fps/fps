@@ -9,7 +9,9 @@ from flask_cors import CORS
 
 from ...common.utils import setup_logging
 
-# Initialize Flask app and CORS
+setup_logging()
+logger = logging.getLogger("services.analysis.openclip.serve")
+
 app = Flask(__name__)
 CORS(app)
 
@@ -55,10 +57,6 @@ def encode():
 
 
 if __name__ == "__main__":
-    # Set up logging
-    setup_logging()
-    logger = logging.getLogger("services.analysis.openclip.serve")
-
     # Set up parser for command line arguments
     parser = argparse.ArgumentParser("OpenCLIP Query Encoder Service")
     parser.add_argument(
@@ -83,5 +81,6 @@ if __name__ == "__main__":
         help="Whether to normalize the query embedding",
     )
     args = parser.parse_args()
+
     qe = OpenCLIPQueryEncoder(args.model_name)
     app.run(debug=False, host=args.host, port=args.port)

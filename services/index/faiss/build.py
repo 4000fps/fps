@@ -11,6 +11,9 @@ import numpy as np
 from ...common.config import load_config
 from ...common.utils import setup_logging
 
+setup_logging()
+logger = logging.getLogger("services.index.faiss.build")
+
 
 def peek_features_attributes(filename: Path) -> tuple[int, str]:
     with h5py.File(filename, "r") as file:
@@ -101,9 +104,6 @@ def create(args: argparse.Namespace) -> None:
 
 
 if __name__ == "__main__":
-    setup_logging()
-    logger = logging.getLogger("services.index.faiss.build")
-
     parser = argparse.ArgumentParser(
         description="FAISS Index Manager: Create/Update Index"
     )
