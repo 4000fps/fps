@@ -19,3 +19,7 @@ def load_config(file_path: str | Path) -> dict[str, Any]:
     _fill_null(config["services_urls"], "http://router")
 
     return config
+
+
+if __name__ == "__main__":
+    pass

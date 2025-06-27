@@ -7,11 +7,8 @@ from typing import Iterable, Iterator
 import more_itertools
 
 from .files import HDF5File
-from .log import setup_logging
-from .record import Record
-
-setup_logging()
-logger = logging.getLogger("services.common.extractors")
+from .types import FrameData, Record
+from .utils import setup_logging
 
 
 class BaseFrameExtractor:
@@ -66,7 +63,7 @@ class BaseFrameExtractor:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
 
-    def load(self) -> list[tuple[str, str, Path]]:
+    def load_frames_directory(self) -> list[FrameData]:
         """Load frame paths from the specified directory."""
         frame_directory = Path(self.args.frames_directory)
 
@@ -79,9 +76,11 @@ class BaseFrameExtractor:
         if not frame_paths:
             raise ValueError(f"No frames found in directory {frame_directory}.")
 
-        frame_info = [(frame_directory.name, path.stem, path) for path in frame_paths]
-        logger.info(f"Loaded {len(frame_info)} frames from {frame_directory}.")
-        return frame_info
+        frame_data_list = [
+            FrameData(frame_directory.name, path.stem, path) for path in frame_paths
+        ]
+        logger.info(f"Loaded {len(frame_data_list)} frames from {frame_directory}.")
+        return frame_data_list
 
     def create_output_file(self, video_id: str) -> HDF5File:
         output_path = str(self.args.output).format(video_id=video_id)
@@ -109,10 +108,15 @@ class BaseFrameExtractor:
             yield record
 
     def skip_extracted_frames(
-        self, frame_info: list[tuple[str, str, Path]]
-    ) -> Iterator[tuple[str, str, Path]]:
+        self, frame_data_list: list[FrameData]
+    ) -> Iterator[FrameData]:
         """Skip frames that have already been extracted."""
-        for video_id, group in itertools.groupby(frame_info, key=lambda x: x[0]):
+        # Group frames by video ID to process them together
+        frame_groups = sorted(
+            ((frame.video_id, frame._id, frame.path) for frame in frame_data_list),
+            key=lambda x: x[0],
+        )
+        for video_id, group in itertools.groupby(frame_groups, key=lambda x: x[0]):
             with self.create_output_file(video_id) as file:
                 not_extracted = []
                 for video_id, frame_id, frame_path in group:
@@ -122,46 +126,53 @@ class BaseFrameExtractor:
             logger.info(
                 f"Video '{video_id}' has {len(not_extracted)} frames not extracted."
             )
-
             yield from not_extracted
 
     def run(self) -> None:
         """Run the frame extraction process."""
-        frame_info = self.load()
+        frame_data = self.load_frames_directory()
 
         if not self.args.force:
-            frame_info = list(self.skip_extracted_frames(frame_info))
+            frame_data = list(self.skip_extracted_frames(frame_data))
 
-        if not frame_info:
+        if not frame_data:
             logger.info("No frames to extract. Exiting.")
             return
 
-        # Unzip the frame_info into separate lists
-        frame_info = more_itertools.unzip(frame_info)
-        frame_info = more_itertools.padded(frame_info, fillvalue=(), n=3)
+        # Unzip the frame_data into separate lists
+        frame_data = [(frame.video_id, frame._id, frame.path) for frame in frame_data]
+        frame_data = more_itertools.unzip(frame_data)
+        frame_data = more_itertools.padded(frame_data, fillvalue=(), n=3)
 
         video_ids: Iterable[str]
         frame_ids: Iterable[str]
         frame_paths: Iterable[Path]
-        video_ids, frame_ids, frame_paths = frame_info  # type: ignore[assignment]
+        video_ids, frame_ids, frame_paths = frame_data  # type: ignore[assignment]
 
         records = self.extract_iterable(frame_paths)
-        record_info = zip(video_ids, frame_ids, records)
+        record_data = zip(video_ids, frame_ids, records)
 
         video_groups: dict[str, list[tuple[str, Record]]] = {}
-        for video_id, frame_id, record in record_info:
+        for video_id, frame_id, record in record_data:
             if video_id not in video_groups:
                 video_groups[video_id] = []
             video_groups[video_id].append((frame_id, record))
 
+        num_videos = 0
+        num_records = 0
         for video_id, group_items in video_groups.items():
             records = [
                 Record(frame_id, record.embedding) for frame_id, record in group_items
             ]
+            num_videos += 1
+            num_records += len(records)
             with self.create_output_file(video_id) as file:
                 file.save_all(records, force=self.args.force)
-        logger.info("Frame extraction completed successfully.")
+
+        logger.info("Extracted %d videos with %d records.", num_videos, num_records)
 
 
 if __name__ == "__main__":
-    pass
+    setup_logging()
+    logger = logging.getLogger("services.common.extractors")
+    

@@ -5,8 +5,8 @@ from typing import Self
 import h5py
 import numpy as np
 
-from .log import setup_logging
-from .record import Record
+from .utils import setup_logging
+from .types import Record
 
 
 class BaseFile(abc.ABC):
