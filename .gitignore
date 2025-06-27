@@ -193,3 +193,11 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 # .cursorignore
 # .cursorindexingignore
+
+# Videos and frames stuff
+data/frames/
+data/videos/
+data/features/
+data/index/
+data/log/
+services/core/static/videos/
