@@ -1,12 +1,20 @@
 import abc
+import gzip
+import json
 import logging
-from typing import Self
+import shutil
+import zlib
+from pathlib import Path
+from typing import Self, Sequence
 
 import h5py
 import numpy as np
 
+from .types import EmbeddingRecord, ObjectRecord, Record
 from .utils import setup_logging
-from .types import Record
+
+setup_logging()
+logger = logging.getLogger("services.common.files")
 
 
 class BaseFile(abc.ABC):
@@ -18,7 +26,7 @@ class BaseFile(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def save_all(self, records: list[Record], force: bool = False) -> None:
+    def save_all(self, records: Sequence[Record], force: bool = False) -> None:
         """Save multiple records to the file."""
         pass
 
@@ -28,7 +36,7 @@ class BaseFile(abc.ABC):
         pass
 
 
-class HDF5File(BaseFile):
+class FileHDF5(BaseFile):
     """Concrete implementation of BaseFile for HDF5 files."""
 
     def __init__(
@@ -98,6 +106,7 @@ class HDF5File(BaseFile):
             )
             return
 
+        assert isinstance(record, EmbeddingRecord), "Record must be an EmbeddingRecord."
         dimensionality = len(record.embedding)
         if self._ids_dataset is None or self._embeddings_dataset is None:
             self._ids_dataset = self._file.create_dataset(
@@ -128,7 +137,7 @@ class HDF5File(BaseFile):
         if self._since_flush >= self.flush_interval:
             self.flush()
 
-    def save_all(self, records: list[Record], force: bool = False) -> None:
+    def save_all(self, records: Sequence[Record], force: bool = False) -> None:
         if self.read_only:
             raise PermissionError("File is opened in read-only mode.")
 
@@ -147,27 +156,88 @@ class HDF5File(BaseFile):
         self._since_flush = 0
 
 
+class FileJSONL(BaseFile):
+    """Concrete implementation of BaseFile for HDF5 files."""
+
+    def __init__(self, file_path: str, flush_interval: int = 100) -> None:
+        self.file_path = Path(file_path)
+        self.flush_interval = flush_interval
+        self._ids: set[str] = set()
+        self._since_flush = 0
+        self._file = None
+
+        # Ensure the file exists and is ready for reading
+        if not self.file_path.exists():
+            self.file_path.parent.mkdir(parents=True, exist_ok=True)
+            self.file_path.touch()
+            logger.info(f"Created new file: {self.file_path}")
+
+        # Load existing IDs from the file if it exists
+        try:
+            with gzip.open(self.file_path, "rt", encoding="utf-8") as file:
+                self._ids = {
+                    json.loads(line).get("_id") for line in file if line.strip()
+                }
+                logger.info(
+                    "Loaded %d IDs from existing file: %s",
+                    len(self._ids),
+                    self.file_path,
+                )
+        except (EOFError, zlib.error, json.JSONDecodeError) as e:
+            logger.warning("Error reading existing file %s: %s", self.file_path, e)
+            logger.warning("File may be corrupted. Creating backup.")
+
+            # Create a backup if the file is corrupted
+            backup_path = self.file_path.with_suffix(f"{self.file_path.suffix}.bak")
+            try:
+                shutil.copy2(self.file_path, backup_path)
+                logger.info("Created backup at %s", backup_path)
+            except Exception as be:
+                logger.error("Failed to create backup: %s", be)
+
+    def __enter__(self) -> Self:
+        self._file = gzip.open(self.file_path, "at", encoding="utf-8")
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        if self._file:
+            self._file.close()
+            self._file = None
+
+    def __contains__(self, _id: str) -> bool:
+        return _id in self._ids
+
+    def save(self, record: Record, force: bool = False) -> None:
+        if self._file is None:
+            raise RuntimeError("File is not opened. Use 'with' statement to open it.")
+
+        if not force and record._id in self._ids:
+            logger.debug(f"Record with ID {record._id} already exists. Skipping save.")
+            return
+
+        assert isinstance(record, ObjectRecord), "Record must be an ObjectRecord."
+        self._ids.add(record._id)
+        self._file.write(json.dumps(record.__dict__, ensure_ascii=False) + "\n")
+
+        self._since_flush += 1
+        if self._since_flush >= self.flush_interval:
+            self.flush()
+
+    def save_all(self, records: Sequence[Record], force: bool = False) -> None:
+        if self._file is None:
+            raise RuntimeError("File is not opened. Use 'with' statement to open it.")
+
+        for record in records:
+            self.save(record, force)
+
+    def flush(self) -> None:
+        if self._file is None:
+            raise RuntimeError("File is not opened. Use 'with' statement to open it.")
+
+        self._file.flush()
+        logger.debug(f"Flushed {self.file_path} to disk.")
+        self._since_flush = 0
+
+
 if __name__ == "__main__":
-    setup_logging()
-    logger = logging.getLogger("services.common.files")
-
-    # Create record
-    record1 = Record(_id="cat", embedding=[0.1, 0.2, 0.3])
-    record2 = Record(_id="dog", embedding=[0.4, 0.5, 0.6])
-    record3 = Record(_id="bird", embedding=[0.7, 0.8, 0.9])
-
-    # Create a list of records
-    records = [record1, record2, record3]
-
-    # Create attributes for the file
-    attrs = {
-        "description": "Example HDF5 file for storing records",
-        "created_by": "services.common.files module",
-    }
-
-    # Use HDF5File to save the record
-    file = HDF5File(
-        "example.h5", read_only=False, flush_interval=10, attrs=attrs, logger=logger
-    )
-    with file:
-        file.save_all(records, force=True)
+    pass

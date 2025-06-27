@@ -3,9 +3,22 @@ from pathlib import Path
 
 
 @dataclass
-class Record:
+class EmbeddingRecord:
     _id: str
     embedding: list[float]
+
+
+@dataclass
+class ObjectRecord:
+    _id: str
+    scores: list[float]
+    boxes: list[tuple[float, float, float, float]]  # (ymin, xmin, ymax, xmax)
+    labels: list[str]
+    detector: str
+    monochrome: float | None = None  # Optional monochromaticity score
+
+
+type Record = EmbeddingRecord | ObjectRecord
 
 
 @dataclass

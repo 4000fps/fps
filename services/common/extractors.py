@@ -1,3 +1,4 @@
+import abc
 import argparse
 import itertools
 import logging
@@ -6,24 +7,25 @@ from typing import Iterable, Iterator
 
 import more_itertools
 
-from .files import HDF5File
-from .types import FrameData, Record
+from .files import FileHDF5, FileJSONL
+from .types import EmbeddingRecord, FrameData, ObjectRecord
 from .utils import setup_logging
 
 setup_logging()
 logger = logging.getLogger("services.common.extractors")
 
 
-class BaseFrameExtractor:
-    """Base class for frame extractors."""
+class BaseExtractor(abc.ABC):
+    """Base class for extractors."""
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        """Add command-line arguments to the parser."""
         parser.add_argument(
             "--chunk-size",
             type=int,
             default=8,
-            help="Number of frames to process in each chunk.",
+            help="Number of items to process in each chunk.",
         )
         parser.add_argument(
             "--force",
@@ -41,8 +43,24 @@ class BaseFrameExtractor:
             "--flush-interval",
             type=int,
             default=10,
-            help="Flush every N records extracted.",
+            help="Flush every N records processed.",
         )
+
+    def __init__(self, args: argparse.Namespace) -> None:
+        """Initialize the extractor with command-line arguments."""
+        self.args = args
+
+    @abc.abstractmethod
+    def run(self) -> None:
+        """Run the extraction process."""
+        pass
+
+
+class BaseFrameExtractor(BaseExtractor):
+    """Base class for frame extractors."""
+
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
             "frames_directory",
             type=str,
@@ -62,8 +80,10 @@ class BaseFrameExtractor:
             default="generic.h5",
             help="Path to the output file where extracted frames will be saved.",
         )
+        super().add_arguments(parser)
 
     def __init__(self, args: argparse.Namespace) -> None:
+        super().__init__(args)
         self.args = args
 
     def load_frames_directory(self) -> list[FrameData]:
@@ -85,22 +105,25 @@ class BaseFrameExtractor:
         logger.info(f"Loaded {len(frame_data_list)} frames from {frame_directory}.")
         return frame_data_list
 
-    def create_output_file(self, video_id: str) -> HDF5File:
+    def create_output_file(self, video_id: str) -> FileHDF5:
+        """Create an output file for the given video ID."""
         output_path = str(self.args.output).format(video_id=video_id)
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         flush_interval: int = self.args.flush_interval
 
-        return HDF5File(
+        return FileHDF5(
             output_path,
             flush_interval=flush_interval,
             attrs={"feature_name": self.args.feature_name},
         )
 
-    def extract_list(self, frame_paths: list[Path]) -> list[Record]:
+    def extract_list(self, frame_paths: list[Path]) -> list[EmbeddingRecord]:
         """Extract frames and return a list of Record objects."""
         raise NotImplementedError("Subclasses must implement the extract method.")
 
-    def extract_iterable(self, frame_paths: Iterable[Path]) -> Iterator[Record]:
+    def extract_iterable(
+        self, frame_paths: Iterable[Path]
+    ) -> Iterator[EmbeddingRecord]:
         """Extract frames from an iterable and yield Record objects."""
         assert self.args.chunk_size > 0, "Chunk size must be greater than 0."
 
@@ -132,7 +155,6 @@ class BaseFrameExtractor:
             yield from not_extracted
 
     def run(self) -> None:
-        """Run the frame extraction process."""
         frame_data = self.load_frames_directory()
 
         if not self.args.force:
@@ -155,7 +177,7 @@ class BaseFrameExtractor:
         records = self.extract_iterable(frame_paths)
         record_data = zip(video_ids, frame_ids, records)
 
-        video_groups: dict[str, list[tuple[str, Record]]] = {}
+        video_groups: dict[str, list[tuple[str, EmbeddingRecord]]] = {}
         for video_id, frame_id, record in record_data:
             if video_id not in video_groups:
                 video_groups[video_id] = []
@@ -165,7 +187,8 @@ class BaseFrameExtractor:
         num_records = 0
         for video_id, group_items in video_groups.items():
             records = [
-                Record(frame_id, record.embedding) for frame_id, record in group_items
+                EmbeddingRecord(frame_id, record.embedding)
+                for frame_id, record in group_items
             ]
             num_videos += 1
             num_records += len(records)
@@ -173,6 +196,143 @@ class BaseFrameExtractor:
                 file.save_all(records, force=self.args.force)
 
         logger.info("Extracted %d videos with %d records.", num_videos, num_records)
+
+
+class BaseObjectExtractor(BaseExtractor):
+    """Base class for object extractors."""
+
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "frames_directory",
+            type=str,
+            help="Path to the input frames directory.",
+        )
+        parser.add_argument(
+            "-o",
+            "--output",
+            type=str,
+            default="generic.jsonl.gz",
+            help="Path to the output file where extracted objects will be saved.",
+        )
+        super().add_arguments(parser)
+
+    def __init__(self, args: argparse.Namespace) -> None:
+        super().__init__(args)
+        self.args = args
+
+    def load_frames_directory(self) -> list[FrameData]:
+        """Load frame paths from the specified directory."""
+        frame_directory = Path(self.args.frames_directory)
+
+        if not frame_directory.is_dir():
+            raise ValueError(
+                f"Frames directory {frame_directory} does not exist or is not a directory."
+            )
+
+        frame_paths = sorted(frame_directory.glob("*.jpg"))
+        if not frame_paths:
+            raise ValueError(f"No frames found in directory {frame_directory}.")
+
+        frame_data_list = [
+            FrameData(frame_directory.name, path.stem, path) for path in frame_paths
+        ]
+        logger.info(f"Loaded {len(frame_data_list)} frames from {frame_directory}.")
+        return frame_data_list
+
+    def create_output_file(self, video_id: str) -> FileJSONL:
+        """Create an output file for the given video ID."""
+        output_path = str(self.args.output).format(video_id=video_id)
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        flush_interval: int = self.args.flush_interval
+
+        return FileJSONL(
+            output_path,
+            flush_interval=flush_interval,
+        )
+
+    def extract_list(self, frame_paths: list[Path]) -> list[ObjectRecord]:
+        """Extract objects from frames and return a list of ObjectRecord objects."""
+        raise NotImplementedError("Subclasses must implement the extract method.")
+
+    def extract_iterable(self, frame_paths: Iterable[Path]) -> Iterator[ObjectRecord]:
+        """Extract objects from an iterable of frame paths and yield ObjectRecord objects."""
+        assert self.args.chunk_size > 0, "Chunk size must be greater than 0."
+
+        batched_frame_paths = more_itertools.chunked(frame_paths, self.args.chunk_size)
+        batched_records = map(self.extract_list, batched_frame_paths)
+        records = itertools.chain.from_iterable(batched_records)
+        for record in records:
+            yield record
+
+    def skip_extracted_frames(
+        self, frame_data_list: list[FrameData]
+    ) -> Iterator[FrameData]:
+        """Skip frames that have already been extracted."""
+        # Group frames by video ID to process them together
+        frame_groups = sorted(
+            ((frame.video_id, frame._id, frame.path) for frame in frame_data_list),
+            key=lambda x: x[0],
+        )
+        for video_id, group in itertools.groupby(frame_groups, key=lambda x: x[0]):
+            with self.create_output_file(video_id) as file:
+                not_extracted: list[FrameData] = []
+                for video_id, frame_id, frame_path in group:
+                    if frame_id not in file:
+                        not_extracted.append(FrameData(video_id, frame_id, frame_path))
+
+            logger.info(
+                f"Video '{video_id}' has {len(not_extracted)} frames not extracted."
+            )
+            yield from not_extracted
+
+    def run(self) -> None:
+        frame_data = self.load_frames_directory()
+
+        if not self.args.force:
+            frame_data = list(self.skip_extracted_frames(frame_data))
+
+        if not frame_data:
+            logger.info("No frames to extract. Exiting.")
+            return
+
+        # Unzip the frame_data into separate lists
+        frame_data = [(frame.video_id, frame._id, frame.path) for frame in frame_data]
+        frame_data = more_itertools.unzip(frame_data)
+        frame_data = more_itertools.padded(frame_data, fillvalue=(), n=3)
+
+        video_ids: Iterable[str]
+        frame_ids: Iterable[str]
+        frame_paths: Iterable[Path]
+        video_ids, frame_ids, frame_paths = frame_data  # type: ignore[assignment]
+
+        records = self.extract_iterable(frame_paths)
+        record_data = zip(video_ids, frame_ids, records)
+        video_groups: dict[str, list[tuple[str, ObjectRecord]]] = {}
+        for video_id, frame_id, record in record_data:
+            if video_id not in video_groups:
+                video_groups[video_id] = []
+            video_groups[video_id].append((frame_id, record))
+
+        num_videos = 0
+        num_records = 0
+        for video_id, group_items in video_groups.items():
+            records = [
+                ObjectRecord(**{"_id": frame_id, **record.__dict__})
+                for frame_id, record in group_items
+            ]
+            num_videos += 1
+            num_records += len(records)
+            with self.create_output_file(video_id) as file:
+                file.save_all(records, force=self.args.force)
+
+        logger.info("Extracted %d videos with %d records.", num_videos, num_records)
+
+
+class BaseSceneExtractor(BaseExtractor):
+    """Base class for scene extractors."""
+
+    pass
 
 
 if __name__ == "__main__":
