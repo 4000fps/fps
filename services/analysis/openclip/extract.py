@@ -12,11 +12,8 @@ import torch.utils
 from PIL import Image
 
 from ...common.extractors import BaseFrameExtractor
-from ...common.log import setup_logging
-from ...common.record import Record
-
-setup_logging()
-logger = logging.getLogger("services.analysis.openclip.extract")
+from ...common.utils import setup_logging
+from ...common.types import Record
 
 
 class FrameListDataset(torch.utils.data.Dataset):
@@ -132,6 +129,7 @@ class OpenCLIPExtractor(BaseFrameExtractor):
         # Create chunks from the iterable
         current_chunk: list[Path] = []
         count = 0
+        processed = 0
 
         for frame_path in frame_paths:
             current_chunk.append(frame_path)
@@ -139,8 +137,19 @@ class OpenCLIPExtractor(BaseFrameExtractor):
 
             # Process when we reach the chunk size
             if len(current_chunk) >= chunk_size:
+                logger.info(
+                    f"Processing frames {processed} to {processed + len(current_chunk) - 1}"
+                )
                 yield from self._process_chunk(current_chunk, batch_size, num_workers)
+                processed += len(current_chunk)
                 current_chunk = []
+
+        # Process any remaining frames
+        if current_chunk:
+            logger.info(
+                f"Processing frames {processed} to {processed + len(current_chunk) - 1}"
+            )
+            yield from self._process_chunk(current_chunk, batch_size, num_workers)
 
     def _process_chunk(
         self, frame_paths: list[Path], batch_size: int, num_workers: int
@@ -162,6 +171,14 @@ class OpenCLIPExtractor(BaseFrameExtractor):
 
 
 if __name__ == "__main__":
+    # Set up logging
+    setup_logging()
+    logger = logging.getLogger("services.analysis.openclip.extract")
+
+    # Suppress PIL TiffImagePlugin DEBUG messages
+    logging.getLogger("PIL.TiffImagePlugin").setLevel(logging.WARNING)
+
+    # Parse command line arguments and run the extractor
     parser = argparse.ArgumentParser(description="OpenCLIP Frame Extractor")
     OpenCLIPExtractor.add_arguments(parser)
     args = parser.parse_args()

@@ -9,10 +9,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 from ...common.config import load_config
-from ...common.log import setup_logging
-
-setup_logging()
-logger = logging.getLogger("services.index.faiss.serve")
+from ...common.utils import setup_logging
 
 app = Flask(__name__)
 CORS(app)
@@ -111,6 +108,9 @@ def search():
 
 
 if __name__ == "__main__":
+    setup_logging()
+    logger = logging.getLogger("services.index.faiss.serve")
+
     parser = argparse.ArgumentParser(description="Query a FAISS index.")
 
     parser.add_argument(

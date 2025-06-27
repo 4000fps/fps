@@ -7,11 +7,9 @@ import torch.nn.functional as F
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-from ...common.log import setup_logging
+from ...common.utils import setup_logging
 
-setup_logging()
-logger = logging.getLogger("services.analysis.openclip.serve")
-
+# Initialize Flask app and CORS
 app = Flask(__name__)
 CORS(app)
 
@@ -47,7 +45,7 @@ def ping():
 @app.route("/encode", methods=["GET", "POST"])
 def encode():
     if request.method == "POST" and request.is_json:
-        query = request.json.get("query", "") # type: ignore[no-untyped-call]
+        query = request.json.get("query", "")  # type: ignore[no-untyped-call]
     else:
         query = request.args.get("query", "")
     query_embedding = qe.encode(query, normalized=args.normalized)
@@ -57,8 +55,12 @@ def encode():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser("OpenCLIP Query Encoder Service")
+    # Set up logging
+    setup_logging()
+    logger = logging.getLogger("services.analysis.openclip.serve")
 
+    # Set up parser for command line arguments
+    parser = argparse.ArgumentParser("OpenCLIP Query Encoder Service")
     parser.add_argument(
         "--host", default="0.0.0.0", help="IP address to use for binding"
     )

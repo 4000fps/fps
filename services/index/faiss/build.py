@@ -9,10 +9,7 @@ import more_itertools
 import numpy as np
 
 from ...common.config import load_config
-from ...common.log import setup_logging
-
-setup_logging()
-logger = logging.getLogger("services.index.faiss.build")
+from ...common.utils import setup_logging
 
 
 def peek_features_attributes(filename: Path) -> tuple[int, str]:
@@ -104,6 +101,9 @@ def create(args: argparse.Namespace) -> None:
 
 
 if __name__ == "__main__":
+    setup_logging()
+    logger = logging.getLogger("services.index.faiss.build")
+
     parser = argparse.ArgumentParser(
         description="FAISS Index Manager: Create/Update Index"
     )

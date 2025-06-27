@@ -31,7 +31,7 @@ def search():
         # Search FAISS
         faiss_response = requests.post(
             FAISS_URL,
-            json={"type": "clip-laion", "embedding": embedding, "k": 3},
+            json={"type": "clip-laion", "embedding": embedding, "k": 10},
             timeout=15,
         )
         faiss_response.raise_for_status()
