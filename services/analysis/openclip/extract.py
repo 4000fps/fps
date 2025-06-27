@@ -12,7 +12,7 @@ import torch.utils
 from PIL import Image
 
 from ...common.extractors import BaseFrameExtractor
-from ...common.types import Record
+from ...common.types import EmbeddingRecord
 from ...common.utils import setup_logging
 
 setup_logging()
@@ -121,11 +121,13 @@ class OpenCLIPExtractor(BaseFrameExtractor):
             self.model.to(self.device)
             self.model.eval()
 
-    def extract_list(self, frame_paths: list[Path]) -> list[Record]:
+    def extract_list(self, frame_paths: list[Path]) -> list[EmbeddingRecord]:
         records = list(self.extract_iterable(frame_paths))
         return records
 
-    def extract_iterable(self, frame_paths: Iterable[Path]) -> Iterator[Record]:
+    def extract_iterable(
+        self, frame_paths: Iterable[Path]
+    ) -> Iterator[EmbeddingRecord]:
         self.setup()
 
         batch_size: int = self.args.batch_size
@@ -159,7 +161,7 @@ class OpenCLIPExtractor(BaseFrameExtractor):
 
     def _process_chunk(
         self, frame_paths: list[Path], batch_size: int, num_workers: int
-    ) -> Iterator[Record]:
+    ) -> Iterator[EmbeddingRecord]:
         """Process a chunk of frame paths."""
         assert self.model is not None, "Model must be set up before processing."
 
@@ -172,8 +174,10 @@ class OpenCLIPExtractor(BaseFrameExtractor):
                 frames = frames.to(self.device)
                 frame_embeddings = self.model.encode_image(frames).float()
 
+                # Frame ID will be empty as we don't have it in this context
+                # `run` method is expected to handle the ID assignment
                 for embedding in frame_embeddings.cpu().numpy():
-                    yield Record(_id="", embedding=embedding.tolist())
+                    yield EmbeddingRecord(_id="", embedding=embedding.tolist())
 
 
 if __name__ == "__main__":
