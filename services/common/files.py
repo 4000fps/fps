@@ -215,7 +215,11 @@ class FileJSONL(BaseFile):
 
         assert isinstance(record, ObjectRecord), "Record must be an ObjectRecord."
         self._ids.add(record._id)
-        self._file.write(json.dumps(record.__dict__, ensure_ascii=False) + "\n")
+        # Filter out None values to reduce file size
+        filtered_record = {
+            key: value for key, value in record.__dict__.items() if value is not None
+        }
+        self._file.write(json.dumps(filtered_record, ensure_ascii=False) + "\n")
 
         self._since_flush += 1
         if self._since_flush >= self.flush_interval:
