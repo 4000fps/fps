@@ -27,18 +27,20 @@ def load_image(image_path: Path) -> np.ndarray | None:
         image_np = io.imread(image_path)
 
         if image_np is None:
-            logging.error(f"Failed to load image {image_path}")
+            logger.error(f"Failed to load image: {image_path}")
             return None
 
         # Convert to RGB if necessary
         if image_np.ndim == 2:  # Grayscale image_np
             image_np = np.stack([image_np] * 3, axis=-1)
+            logger.debug("Converted grayscale image to RGB")
         elif image_np.shape[2] == 4:  # RGBA image_np
             image_np = image_np[:, :, :3]
+            logger.debug("Converted RGBA image to RGB")
         return image_np
 
     except Exception as e:
-        logging.error(f"Error loading image {image_path}: {e}")
+        logger.error(f"Error loading image {image_path}: {e}")
         return None
 
 
@@ -246,6 +248,7 @@ class ColorsExtractor(BaseObjectExtractor):
         column_names = ["R", "G", "B"] + list(range(num_colors))
 
         def read_color_table(path: str) -> np.ndarray:
+            logger.debug(f"Loading color table from {path}")
             color_table = pd.read_csv(
                 path, names=column_names, index_col=["R", "G", "B"], sep=r"\s+"
             )
@@ -285,28 +288,34 @@ class ColorsExtractor(BaseObjectExtractor):
 
     def extract_list(self, frame_paths: list[Path]) -> list[ObjectRecord]:
         self.setup()
+        total = len(frame_paths)
+        logger.info(f"Processing batch of {total} frames")
         with multiprocessing.Pool() as pool:
             records = pool.map(self.extract_path, frame_paths)
             records = list(records)
+        logger.info(f"Completed batch processing of {total} frames")
         return records
 
     def extract_iterable(self, frame_paths: Iterable[Path]) -> Iterator[ObjectRecord]:
         self.setup()
         frame_paths = list(frame_paths)
         total = len(frame_paths)
-        logger.info(f"Starting extraction for {total} frames...")
+        logger.info(f"Extracting colors from {total} frames")
         processed = 0
+        chunk_size = max(1, min(16, multiprocessing.cpu_count()))
+        logger.debug(f"Using chunk size of {chunk_size} for parallel processing")
+
         with multiprocessing.Pool() as pool:
             for record in pool.imap_unordered(
                 self.extract_path,
                 frame_paths,
-                chunksize=max(1, min(16, multiprocessing.cpu_count())),
+                chunksize=chunk_size,
             ):
                 processed += 1
                 if processed % 10 == 0 or processed == total:
-                    logger.info(f"Processed {processed}/{total} frames")
+                    logger.info(f"Processed {processed}/{total} frames ({processed/total:.1%})")
                 yield record
-        logger.info("Extraction complete.")
+        logger.info(f"Completed extraction of {total} frames")
 
 
 if __name__ == "__main__":

@@ -32,9 +32,13 @@ class FrameListDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index: int) -> Any:
         frame_path = self.frame_paths[index]
-        frame = Image.open(frame_path).convert("RGB")
-        frame = self.preprocessor(frame)
-        return frame
+        try:
+            frame = Image.open(frame_path).convert("RGB")
+            frame = self.preprocessor(frame)
+            return frame
+        except Exception as e:
+            logger.error(f"Failed to process frame {frame_path.name}: {e}")
+            raise
 
 
 class FrameIterableDataset(torch.utils.data.IterableDataset):
@@ -108,10 +112,10 @@ class OpenCLIPExtractor(BaseFrameExtractor):
         if self.model is None or self.processor is None:
             use_gpu = self.args.gpu and torch.cuda.is_available()
             if self.args.gpu and not torch.cuda.is_available():
-                logger.warning("GPU is requested but not available. Fall back to CPU.")
+                logger.warning("GPU requested but unavailable, falling back to CPU")
 
             self.device = "cuda" if use_gpu else "cpu"
-            logger.info(f"Using device: {self.device}")
+            logger.info(f"Initializing {self.args.model_name} on {self.device}")
 
             os.makedirs("/cache/open_clip", exist_ok=True)
 
@@ -120,9 +124,12 @@ class OpenCLIPExtractor(BaseFrameExtractor):
             )
             self.model.to(self.device)
             self.model.eval()
+            logger.info(f"Loaded {self.args.model_name} model successfully")
 
     def extract_list(self, frame_paths: list[Path]) -> list[EmbeddingRecord]:
+        logger.info(f"Extracting embeddings for {len(frame_paths)} frames in list mode")
         records = list(self.extract_iterable(frame_paths))
+        logger.info(f"Completed extraction of {len(records)} embeddings")
         return records
 
     def extract_iterable(
@@ -133,6 +140,10 @@ class OpenCLIPExtractor(BaseFrameExtractor):
         batch_size: int = self.args.batch_size
         chunk_size = batch_size * 5
         num_workers: int = self.args.num_workers
+
+        logger.info(
+            f"Starting extraction with batch size {batch_size} and {num_workers} workers"
+        )
 
         # Create chunks from the iterable
         current_chunk: list[Path] = []
@@ -145,19 +156,24 @@ class OpenCLIPExtractor(BaseFrameExtractor):
 
             # Process when we reach the chunk size
             if len(current_chunk) >= chunk_size:
+                chunk_size_actual = len(current_chunk)
                 logger.info(
-                    f"Processing frames {processed} to {processed + len(current_chunk) - 1}"
+                    f"Processing chunk of {chunk_size_actual} frames ({processed} to {processed + chunk_size_actual - 1})"
                 )
                 yield from self._process_chunk(current_chunk, batch_size, num_workers)
-                processed += len(current_chunk)
+                processed += chunk_size_actual
                 current_chunk = []
 
         # Process any remaining frames
         if current_chunk:
+            remaining = len(current_chunk)
             logger.info(
-                f"Processing frames {processed} to {processed + len(current_chunk) - 1}"
+                f"Processing final chunk of {remaining} frames ({processed} to {processed + remaining - 1})"
             )
             yield from self._process_chunk(current_chunk, batch_size, num_workers)
+            processed += remaining
+
+        logger.info(f"Finished extracting embeddings for {processed} frames")
 
     def _process_chunk(
         self, frame_paths: list[Path], batch_size: int, num_workers: int

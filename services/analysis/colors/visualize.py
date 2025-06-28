@@ -6,23 +6,23 @@ import numpy as np
 from skimage import io
 
 COLORS = {
-    'black' : [0.00, 0.00, 0.00],
-    'blue'  : [0.00, 0.00, 1.00],
-    'brown' : [0.50, 0.40, 0.25],
-    'grey'  : [0.50, 0.50, 0.50],
-    'green' : [0.00, 1.00, 0.00],
-    'orange': [1.00, 0.80, 0.00],
-    'pink'  : [1.00, 0.50, 1.00],
-    'purple': [1.00, 0.00, 1.00],
-    'red'   : [1.00, 0.00, 0.00],
-    'white' : [1.00, 1.00, 1.00],
-    'yellow': [1.00, 1.00, 0.00],
+    "black": [0.00, 0.00, 0.00],
+    "blue": [0.00, 0.00, 1.00],
+    "brown": [0.50, 0.40, 0.25],
+    "grey": [0.50, 0.50, 0.50],
+    "green": [0.00, 1.00, 0.00],
+    "orange": [1.00, 0.80, 0.00],
+    "pink": [1.00, 0.50, 1.00],
+    "purple": [1.00, 0.00, 1.00],
+    "red": [1.00, 0.00, 0.00],
+    "white": [1.00, 1.00, 1.00],
+    "yellow": [1.00, 1.00, 0.00],
 }
 
 
-def main(args):
-    with open(args.color_map, "r") as f:
-        color_map = json.load(f)
+def main(args: argparse.Namespace) -> None:
+    with open(args.color_map, "r") as file:
+        color_map = json.load(file)
 
     hwhw = np.tile((args.height, args.width), 2).reshape(1, 4)
 

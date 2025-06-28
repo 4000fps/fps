@@ -101,9 +101,7 @@ class FileHDF5(BaseFile):
             raise RuntimeError("File is not opened. Use 'with' statement to open it.")
 
         if not force and record._id in self._ids:
-            self.logger.debug(
-                f"Record with ID {record._id} already exists. Skipping save."
-            )
+            self.logger.debug(f"Skipping existing record with ID {record._id}")
             return
 
         assert isinstance(record, EmbeddingRecord), "Record must be an EmbeddingRecord."
@@ -170,7 +168,7 @@ class FileJSONL(BaseFile):
         if not self.file_path.exists():
             self.file_path.parent.mkdir(parents=True, exist_ok=True)
             self.file_path.touch()
-            logger.info(f"Created new file: {self.file_path}")
+            logger.info(f"Created new file at {self.file_path}")
 
         # Load existing IDs from the file if it exists
         try:
@@ -179,7 +177,7 @@ class FileJSONL(BaseFile):
                     json.loads(line).get("_id") for line in file if line.strip()
                 }
                 logger.info(
-                    "Loaded %d IDs from existing file: %s",
+                    "Found %d IDs in existing file %s",
                     len(self._ids),
                     self.file_path,
                 )
@@ -212,7 +210,7 @@ class FileJSONL(BaseFile):
             raise RuntimeError("File is not opened. Use 'with' statement to open it.")
 
         if not force and record._id in self._ids:
-            logger.debug(f"Record with ID {record._id} already exists. Skipping save.")
+            logger.debug(f"Skipping existing record with ID {record._id}")
             return
 
         assert isinstance(record, ObjectRecord), "Record must be an ObjectRecord."

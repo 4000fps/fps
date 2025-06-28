@@ -31,7 +31,7 @@ def load_image(image_path: Path, transform: T.Compose | None = None) -> Any | No
             image = transform(image)
         return image
     except Exception as e:
-        logger.error(f"Error loading image {image_path}: {e}")
+        logger.error(f"Failed to load image {image_path.name}: {e}")
         return None
 
 
@@ -89,6 +89,7 @@ class DinoV2Extractor(BaseFrameExtractor):
             self.device = (
                 "cuda" if self.args.gpu and torch.cuda.is_available() else "cpu"
             )
+            logger.info(f"Loading {self.args.model_name} model on {self.device}")
             self.model = torch.hub.load(
                 "facebookresearch/dinov2", self.args.model_name
             ).to(  # type: ignore[attr-defined]
@@ -100,6 +101,9 @@ class DinoV2Extractor(BaseFrameExtractor):
         self.setup()
         assert self.model is not None, "Model must be set up before extraction."
 
+        total_frames = len(frame_paths)
+        logger.info(f"Extracting embeddings for {total_frames} frames")
+
         dataset = FrameListDataset(frame_paths)
         dataloader = torch.utils.data.DataLoader(
             dataset,
@@ -108,18 +112,29 @@ class DinoV2Extractor(BaseFrameExtractor):
             num_workers=self.args.num_workers,
             pin_memory=self.args.gpu,
         )
-
         embeddings = []
+        processed = 0
+        total_batches = len(dataloader)
+
         with torch.no_grad():
-            for x in dataloader:
+            for index, x in enumerate(dataloader):
+                batch_size = x.shape[0]
+                processed += batch_size
+
                 x = x.to(self.device, non_blocking=True)
                 fv = self.model(x).cpu().numpy()
                 embeddings.append(fv)
+
+                if index % max(1, total_batches // 10) == 0 or index == total_batches - 1:
+                    logger.info(
+                        f"Processed {processed}/{total_frames} frames ({processed / total_frames:.1%})"
+                    )
         embeddings = np.concatenate(embeddings, axis=0)
         records = [
             EmbeddingRecord(_id=frame_path.stem, embedding=embedding)
             for frame_path, embedding in zip(frame_paths, embeddings)
         ]
+        logger.info(f"Completed extraction of {total_frames} embeddings")
         return records
 
 

@@ -95,6 +95,7 @@ class BaseFrameExtractor(BaseExtractor):
                 f"Frames directory {frame_directory} does not exist or is not a directory."
             )
 
+        logger.info(f"Loading frames from {frame_directory}")
         frame_paths = sorted(frame_directory.glob("*.jpg"))
         if not frame_paths:
             raise ValueError(f"No frames found in directory {frame_directory}.")
@@ -102,7 +103,7 @@ class BaseFrameExtractor(BaseExtractor):
         frame_data_list = [
             FrameData(frame_directory.name, path.stem, path) for path in frame_paths
         ]
-        logger.info(f"Loaded {len(frame_data_list)} frames from {frame_directory}.")
+        logger.info(f"Found {len(frame_data_list)} frames in {frame_directory}")
         return frame_data_list
 
     def create_output_file(self, video_id: str) -> FileHDF5:
@@ -150,7 +151,7 @@ class BaseFrameExtractor(BaseExtractor):
                         not_extracted.append(FrameData(video_id, frame_id, frame_path))
 
             logger.info(
-                f"Video '{video_id}' has {len(not_extracted)} frames not extracted."
+                f"Found {len(not_extracted)} unprocessed frames for video '{video_id}'"
             )
             yield from not_extracted
 
@@ -161,7 +162,7 @@ class BaseFrameExtractor(BaseExtractor):
             frame_data = list(self.skip_extracted_frames(frame_data))
 
         if not frame_data:
-            logger.info("No frames to extract. Exiting.")
+            logger.info("No frames to process, exiting")
             return
 
         # Unzip the frame_data into separate lists
@@ -195,7 +196,7 @@ class BaseFrameExtractor(BaseExtractor):
             with self.create_output_file(video_id) as file:
                 file.save_all(records, force=self.args.force)
 
-        logger.info("Extracted %d videos with %d records.", num_videos, num_records)
+        logger.info("Completed extraction of %d videos with %d records", num_videos, num_records)
 
 
 class BaseObjectExtractor(BaseExtractor):
@@ -230,6 +231,7 @@ class BaseObjectExtractor(BaseExtractor):
                 f"Frames directory {frame_directory} does not exist or is not a directory."
             )
 
+        logger.info(f"Loading frames from {frame_directory}")
         frame_paths = sorted(frame_directory.glob("*.jpg"))
         if not frame_paths:
             raise ValueError(f"No frames found in directory {frame_directory}.")
@@ -237,7 +239,7 @@ class BaseObjectExtractor(BaseExtractor):
         frame_data_list = [
             FrameData(frame_directory.name, path.stem, path) for path in frame_paths
         ]
-        logger.info(f"Loaded {len(frame_data_list)} frames from {frame_directory}.")
+        logger.info(f"Found {len(frame_data_list)} frames in {frame_directory}")
         return frame_data_list
 
     def create_output_file(self, video_id: str) -> FileJSONL:
@@ -282,7 +284,7 @@ class BaseObjectExtractor(BaseExtractor):
                         not_extracted.append(FrameData(video_id, frame_id, frame_path))
 
             logger.info(
-                f"Video '{video_id}' has {len(not_extracted)} frames not extracted."
+                f"Found {len(not_extracted)} unprocessed frames for video '{video_id}'"
             )
             yield from not_extracted
 
@@ -293,7 +295,7 @@ class BaseObjectExtractor(BaseExtractor):
             frame_data = list(self.skip_extracted_frames(frame_data))
 
         if not frame_data:
-            logger.info("No frames to extract. Exiting.")
+            logger.info("No frames to process, exiting")
             return
 
         # Unzip the frame_data into separate lists
@@ -326,7 +328,7 @@ class BaseObjectExtractor(BaseExtractor):
             with self.create_output_file(video_id) as file:
                 file.save_all(records, force=self.args.force)
 
-        logger.info("Extracted %d videos with %d records.", num_videos, num_records)
+        logger.info("Completed extraction of %d videos with %d records", num_videos, num_records)
 
 
 class BaseSceneExtractor(BaseExtractor):
