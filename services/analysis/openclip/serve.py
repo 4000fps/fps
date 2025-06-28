@@ -50,6 +50,9 @@ def encode():
         query = request.json.get("query", "")  # type: ignore[no-untyped-call]
     else:
         query = request.args.get("query", "")
+    if not query:
+        return jsonify({"error": "Query parameter is required"}), 400
+
     query_embedding = qe.encode(query, normalized=args.normalized)
     result = jsonify({"query": query, "embedding": query_embedding})
     result.status_code = 200
