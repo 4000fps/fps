@@ -202,3 +202,6 @@ data/index/
 data/log/
 data/colors/
 services/core/static/videos/
+
+# Model weights
+services/analysis/clip2video/checkpoint/*

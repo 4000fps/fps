@@ -1,0 +1,3 @@
+[submodule "services/analysis/clip2video/CLIP2Video"]
+	path = services/analysis/clip2video/CLIP2Video
+	url = https://github.com/CryhanFang/CLIP2Video.git
