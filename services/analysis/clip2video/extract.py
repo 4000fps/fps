@@ -71,7 +71,7 @@ def load_scene(
         3,
         dtype=torch.uint8,
     )
-    video_mask = torch.zeros(1, scene_config.max_frames, dtype=torch.bool)
+    video_mask = torch.zeros(1, scene_config.max_frames, dtype=torch.long)
 
     scene_duration = scene.end_time - scene.start_time
     num_frames = scene.end_frame - scene.start_frame
@@ -270,7 +270,7 @@ class CLIP2VideoExtractor(BaseVideoExtractor):
             checkpoint_dir="checkpoint", clip_path="checkpoint/ViT-B-32.pt"
         )
         self.config.gpu = args.gpu
-        set_seed(args.config)
+        set_seed(self.config)
 
         self.scene_config = SceneConfig(
             min_scene_duration=args.min_duration,
@@ -305,7 +305,7 @@ class CLIP2VideoExtractor(BaseVideoExtractor):
             self.model = load_model(self.config, self.device)
             self.model.to(self.device)
             self.model.eval()
-            logger.info(f"Model loaded: {self.model.name} on {self.device}")
+            logger.info(f"Loaded model at {self.config.checkpoint_dir.as_posix()} on device {self.device.type}")
 
     def forward_batch(
         self, batch: tuple[torch.Tensor, torch.Tensor, list[str]]
@@ -318,7 +318,7 @@ class CLIP2VideoExtractor(BaseVideoExtractor):
             raise RuntimeError("Model is not initialized. Call setup() first.")
 
         visual_output = self.model.get_visual_output(video, video_mask)
-        video_embeddings = self.model.get_video_embeddings(visual_output, video)
+        video_embeddings = self.model.get_video_embeddings(visual_output, video_mask)
 
         records: list[EmbeddingRecord] = []
         for i, scene_id in enumerate(scene_ids):

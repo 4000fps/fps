@@ -63,9 +63,9 @@ class CLIP2VideoModel(CLIP2VideoBaseModel):
         extended_video_mask = extended_video_mask.expand(
             -1, temporal_video_mask.size(1), -1
         )
-        visual_output = self.transformerClip(
-            visual_output.transpose(0, 1), extended_video_mask
-        ).transpose(0, 1)
+        visual_output = visual_output.permute(1, 0, 2)
+        visual_output = self.transformerClip(visual_output, extended_video_mask)
+        visual_output = visual_output.permute(1, 0, 2)
 
         # Select even frames
         frame_position_id = torch.arange(
