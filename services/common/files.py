@@ -6,6 +6,7 @@ import shutil
 import zlib
 from pathlib import Path
 from typing import Self, Sequence
+from dataclasses import asdict
 
 import h5py
 import numpy as np
@@ -217,7 +218,7 @@ class FileJSONL(BaseFile):
         self._ids.add(record._id)
         # Filter out None values to reduce file size
         filtered_record = {
-            key: value for key, value in record.__dict__.items() if value is not None
+            key: value for key, value in asdict(record).items() if value is not None
         }
         self._file.write(json.dumps(filtered_record, ensure_ascii=False) + "\n")
 

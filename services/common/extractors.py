@@ -379,7 +379,7 @@ class BaseVideoExtractor(BaseExtractor):
 
         logger.info(f"Loading frames from {frames_directory}")
 
-        frame_paths = sorted(frames_directory.glob("*.jpg"))
+        frame_paths = sorted(frames_directory.glob("*.jpg")) or sorted(frames_directory.glob("*.png"))
         if not frame_paths:
             raise ValueError(f"No frames found in directory {frames_directory}.")
 
@@ -396,6 +396,9 @@ class BaseVideoExtractor(BaseExtractor):
             frame_paths = list(map(Path, frame_paths))
 
             scenes_file = frame_paths[0].parent / f"{video_id}-scenes.csv"
+            if scenes_file.is_file():
+                logger.info(f"Found scenes file {scenes_file} for video ID {video_id}")
+
             escaped_video_id = re.escape(video_id)
             candidates = (scenes_file.parents[2] / "videos").glob(f"{video_id}.*")
             video_paths = [
