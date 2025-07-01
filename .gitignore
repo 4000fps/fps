@@ -205,3 +205,4 @@ services/core/static/videos/
 
 # Model weights
 services/analysis/clip2video/checkpoint/*
+services/analysis/clipvip/checkpoint/*
