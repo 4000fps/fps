@@ -1,23 +1,26 @@
 import argparse
-import os
+import logging
 
-import numpy as np
 import torch
-from flask import Flask, jsonify, request
+import uvicorn
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from .CLIP2Video.modules.tokenization_clip import SimpleTokenizer as CLIPTokenizer
 from .config import Config
+from .model import CLIP2VideoModel
 from .utils import load_device, load_model
 
-# Disable CUDA if not needed
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
-
-app = Flask(__name__)
+# Silent all logging messages
+logging.getLogger("services.analysis.clip2video.CLIP2Video").setLevel(logging.ERROR)
+logging.getLogger("asyncio").setLevel(logging.ERROR)
 
 
 class CLIP2VideoQueryEncoder:
     def __init__(self, config: Config) -> None:
         self.config = config
+        self.config.gpu = torch.cuda.is_available()
         self.device, num_gpu = load_device(
             self.config, local_rank=self.config.local_rank
         )
@@ -30,7 +33,9 @@ class CLIP2VideoQueryEncoder:
             "UNK_TOKEN": "[UNK]",
             "PAD_TOKEN": "[PAD]",
         }
-        self.model = load_model(self.config, self.device)
+        model = load_model(self.config, self.device)
+        model = torch.compile(model)
+        self.model: CLIP2VideoModel = model.eval()  # type: ignore[misc]
 
     def preprocess(self, query: str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         words: list[str] = self.tokenizer.tokenize(query)
@@ -65,7 +70,7 @@ class CLIP2VideoQueryEncoder:
 
         return pairs_text, pairs_mask, pairs_segment
 
-    def encode(self, query: str) -> np.ndarray:
+    def encode(self, query: str) -> list[float]:
         input_ids, input_mask, segment_ids = self.preprocess(query)
 
         input_ids = input_ids.unsqueeze(0).to(self.device)
@@ -76,42 +81,47 @@ class CLIP2VideoQueryEncoder:
             sequence_output = self.model.get_sequence_output(
                 input_ids, segment_ids, input_mask
             )
-            text_embedding = self.model.get_text_embeddings(sequence_output, input_mask)
-            text_embedding = text_embedding.squeeze(0).cpu().numpy()
-
-        return text_embedding
+            embeddings = self.model.get_text_embeddings(sequence_output, input_mask)
+            return embeddings.squeeze().cpu().numpy().tolist()
 
 
-@app.route("/", methods=["GET"])
-def index():
-    return "", 200
+class QueryRequest(BaseModel):
+    query: str
 
 
-@app.route("/ping", methods=["GET"])
-def ping():
-    return "pong", 200
+def create_app(config: Config) -> FastAPI:
+    app = FastAPI(title="clip2video encoder")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    encoder = CLIP2VideoQueryEncoder(config)
+    app.state.encoder = encoder
 
+    @app.get("/ping")
+    def ping():
+        return {"message": "pong"}
 
-@app.route("/encode", methods=["GET", "POST"])
-def encode():
-    if request.method == "POST" and request.is_json:
-        query = request.json.get("query", "")  # type: ignore[no-untyped-call]
-    else:
-        query = request.args.get("query", "")
-    if not query:
-        return jsonify({"error": "Query parameter is required"}), 400
-    query_embedding = qe.encode(query)
-    result = jsonify({"query": query, "embedding": query_embedding.tolist()})
-    result.status_code = 200
-    return result
+    @app.post("/encode")
+    def encode(request: QueryRequest):
+        query = request.query.strip()
+        if not query:
+            raise HTTPException(status_code=400, detail="Query cannot be empty.")
+        try:
+            embedding = encoder.encode(query)
+            return {"embedding": embedding, "length": len(embedding)}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    return app
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="CLIP2Video Query Encoder Service")
-    parser.add_argument(
-        "--host", default="0.0.0.0", help="IP address to use for binding"
-    )
-    parser.add_argument("--port", default="8080", help="Port to use for binding")
+    parser = argparse.ArgumentParser(description="clip2video encoder service")
+    parser.add_argument("--host", type=str, default="0.0.0.0", help="host to run on")
+    parser.add_argument("--port", type=int, default=8000, help="port to run on")
     args = parser.parse_args()
 
     config = Config(
@@ -119,9 +129,6 @@ if __name__ == "__main__":
         checkpoint_dir="checkpoint",
         clip_path="checkpoint/ViT-B-32.pt",
     )
-    config.gpu = False
 
-    qe = CLIP2VideoQueryEncoder(config)
-
-    # Run the flask app
-    app.run(debug=False, host=args.host, port=args.port)
+    app = create_app(config)
+    uvicorn.run(app, host=args.host, port=args.port)
