@@ -1,0 +1,32 @@
+body {
+  font-family: sans-serif;
+  padding: 2rem;
+  background-color: #f0f0f0;
+}
+
+h1 {
+  margin-bottom: 1rem;
+}
+
+.search-bar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 1.5rem;
+}
+
+input, select, button {
+  padding: 0.5rem;
+  font-size: 1rem;
+}
+
+#results {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.result-img {
+  width: 200px;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}

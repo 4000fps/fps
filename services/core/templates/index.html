@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Search</title>
+  <link rel="stylesheet" href="static/css/styles.css" />
+</head>
+<body>
+  <h1>Search</h1>
+
+  <div class="search-bar">
+    <input id="query" type="text" placeholder="Enter your query..." />
+    <select id="model">
+      <option value="clip-laion">OpenCLIP</option>
+      <option value="clip-openai">OpenAI CLIP</option>
+    </select>
+    <button onclick="runSearch()">Search</button>
+  </div>
+
+  <div id="results"></div>
+
+  <script src="static/js/config.js"></script>
+  <script src="static/js/search.js"></script>
+</body>
+</html>
