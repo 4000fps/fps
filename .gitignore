@@ -201,6 +201,9 @@ data/features/
 data/index/
 data/log/
 data/colors/
+
+# Static files
+services/core/static/frames/
 services/core/static/videos/
 
 # Model weights
