@@ -19,6 +19,7 @@ logger = logging.getLogger("services.analysis.clip.extract")
 
 logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
 logging.getLogger("PIL.TiffImagePlugin").setLevel(logging.WARNING)
+logging.getLogger("PIL.PngImagePlugin").setLevel(logging.WARNING)
 
 
 class FrameListDataset(torch.utils.data.Dataset):
