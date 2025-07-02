@@ -98,7 +98,7 @@ class BaseFrameExtractor(BaseExtractor):
             )
 
         logger.info(f"Loading frames from {frame_directory}")
-        frame_paths = sorted(frame_directory.glob("*.jpg"))
+        frame_paths = sorted(frame_directory.glob("*.jpg")) or sorted(frame_directory.glob("*.png"))
         if not frame_paths:
             raise ValueError(f"No frames found in directory {frame_directory}.")
 
@@ -237,7 +237,7 @@ class BaseObjectExtractor(BaseExtractor):
             )
 
         logger.info(f"Loading frames from {frame_directory}")
-        frame_paths = sorted(frame_directory.glob("*.jpg"))
+        frame_paths = sorted(frame_directory.glob("*.jpg")) or sorted(frame_directory.glob("*.png"))
         if not frame_paths:
             raise ValueError(f"No frames found in directory {frame_directory}.")
 
