@@ -1,34 +1,30 @@
 import argparse
-import logging
+import io
 import urllib.request
 import warnings
 from pathlib import Path
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 import torchvision.transforms as T
-from flask import Flask, jsonify, request
+import uvicorn
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
-
-from ...common.utils import setup_logging
 
 warnings.filterwarnings(
     "ignore", category=UserWarning, message="xFormers is not available*"
 )
 
-setup_logging()
-logger = logging.getLogger("services.analysis.dinov2.serve")
-
-app = Flask(__name__)
-
 
 class DinoV2FrameEncoder:
-    def __init__(self, model_name: str = "dinov2_vits14", gpu: bool = True) -> None:
-        self.device = "cuda" if gpu and torch.cuda.is_available() else "cpu"
-        self.model = torch.hub.load("facebookresearch/dinov2", model_name).to(  # type: ignore[attr-defined]
+    def __init__(self, model_name: str) -> None:
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        model = torch.hub.load("facebookresearch/dinov2", model_name).to(  # type: ignore[attr-defined]
             self.device
         )
+        self.model = model.eval()
+
         self.transform = T.Compose(
             [
                 T.Resize(256),
@@ -38,86 +34,89 @@ class DinoV2FrameEncoder:
             ]
         )
 
-    def encode_pil(self, pil_image: Image.Image, normalized: bool = True) -> np.ndarray:
+    def encode_pil(self, pil_image: Image.Image) -> list[float]:
         """Encodes a PIL image to a feature vector."""
         with torch.no_grad():
             inputs = self.transform(pil_image).unsqueeze(0).to(self.device)  # type: ignore[call-arg]
-            image_features = self.model(inputs)
-            if normalized:
-                image_features = F.normalize(image_features, dim=-1)
+            image_embeddings = self.model(inputs)
+            image_embeddings = F.normalize(image_embeddings, dim=-1)
 
-        return image_features.cpu().numpy().squeeze()
+        return image_embeddings.squeeze().cpu().numpy().tolist()
 
-    def encode_path(self, image_path: Path, normalized: bool = True) -> np.ndarray:
+    def encode_path(self, image_path: Path) -> list[float]:
         """Encodes an image from a file path to a feature vector."""
         pil_image = Image.open(image_path).convert("RGB")
-        return self.encode_pil(pil_image, normalized)
+        return self.encode_pil(pil_image)
 
-    def encode_url(self, image_url: str, normalized: bool = True) -> np.ndarray:
+    def encode_url(self, image_url: str) -> list[float]:
         """Encodes an image from a URL to a feature vector."""
         with urllib.request.urlopen(image_url) as response:
             pil_image = Image.open(response).convert("RGB")
-        return self.encode_pil(pil_image, normalized)
+        return self.encode_pil(pil_image)
 
 
-@app.route("/", methods=["GET"])
-def index():
-    return "", 200
+def create_app(model_name: str) -> FastAPI:
+    app = FastAPI(title="dinov2 encoder")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
+    encoder = DinoV2FrameEncoder(model_name)
+    app.state.encoder = encoder
 
-@app.route("/ping", methods=["GET"])
-def ping():
-    return "pong", 200
+    @app.get("/ping")
+    def ping():
+        return {"message": "pong"}
 
+    @app.get("/encode")
+    def encode_url(url: str):
+        if not url:
+            raise HTTPException(status_code=400, detail="Missing 'url' parameter")
+        try:
+            embedding = encoder.encode_url(url)
+            return {"url": url, "embedding": embedding, "length": len(embedding)}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
-@app.route("/encode", methods=["GET"])
-def encode_url():
-    url = request.args.get("url")
-    normalized = request.args.get("normalized", "true").lower() == "true"
-    if not url:
-        return jsonify({"error": "Missing 'url' parameter"}), 400
-    app.logger.info(f"Received request to encode URL: {url}")
-    embedding = encoder.encode_url(url, normalized)
-    return jsonify({"url": url, "embedding": embedding.tolist()}), 200
+    @app.post("/encode")
+    async def encode_image(image: UploadFile = File(...)):
+        if not image:
+            raise HTTPException(status_code=400, detail="Missing 'image' file")
 
+        try:
+            contents = await image.read()
+            pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
+            embedding = encoder.encode_pil(pil_image)
+            return {
+                "filename": image.filename,
+                "embedding": embedding,
+                "length": len(embedding),
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
-@app.route("/encode", methods=["POST"])
-def encode_image():
-    file = request.files.get("image")
-    if not file:
-        return jsonify({"error": "Missing 'image' file"}), 400
-
-    image = Image.open(file).convert("RGB")  # type: ignore[call-arg]
-    normalized = request.form.get("normalized", "true").lower() == "true"
-    embedding = encoder.encode_pil(image, normalized)
-    return jsonify({"filename": file.filename, "embedding": embedding.tolist()}), 200
+    return app
 
 
 if __name__ == "__main__":
-    default_gpu = torch.cuda.is_available() and torch.cuda.device_count() > 0
-
-    parser = argparse.ArgumentParser(description="DinoV2 Frame Encoder Service")
+    parser = argparse.ArgumentParser(description="dinov2 encoder service")
     parser.add_argument(
-        "--host", default="0.0.0.0", help="IP address to use for binding"
-    )
-    parser.add_argument("--port", default="8080", help="Port to use for binding")
-    parser.add_argument(
-        "--model-name",
-        default="dinov2_vits14",
-        choices=("dinov2_vits14", "dinov2_vitb14", "dinov2_vitl14", "dinov2_vitg14"),
-        help="Name of the DinoV2 model to use",
+        "--model",
+        default="dinov2_vitl14",
+        type=str,
+        choices=["dinov2_vits14", "dinov2_vitb14", "dinov2_vitl14", "dinov2_vitg14"],
+        help="model name to use",
     )
     parser.add_argument(
-        "--no-normalized",
-        action="store_false",
-        dest="normalized",
-        default=True,
-        help="Whether to normalize features or not",
+        "--host", default="0.0.0.0", type=str, help="host to run the service on"
     )
     parser.add_argument(
-        "--gpu", action="store_true", default=default_gpu, help="Whether to use GPU"
+        "--port", default=8000, type=int, help="port to run the service on"
     )
     args = parser.parse_args()
 
-    encoder = DinoV2FrameEncoder(model_name=args.model_name, gpu=args.gpu)
-    app.run(debug=False, host=args.host, port=args.port)
+    app = create_app(model_name=args.model)
+    uvicorn.run(app, host=args.host, port=args.port)
