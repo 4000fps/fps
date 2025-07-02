@@ -20,7 +20,7 @@ class CLIPQueryEncoder:
         self.model: Any = AutoModel.from_pretrained(model_name).to(DEVICE)
         self.model.eval()
 
-    def get_text_embedding(self, query: str, normalized: bool = True) -> list[float]:
+    def encode(self, query: str, normalized: bool = True) -> list[float]:
         with torch.no_grad():
             inputs = self.tokenizer(query, padding=True, return_tensors="pt").to(DEVICE)
             text_embeddings = self.model.get_text_features(**inputs)
@@ -56,7 +56,7 @@ def encode(request: QueryRequest):
     if not query:
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
     try:
-        embedding = qe.get_text_embedding(query, normalized=NORMALIZE)
+        embedding = qe.encode(query, normalized=NORMALIZE)
         return {"embedding": embedding}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
