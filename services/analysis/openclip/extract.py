@@ -8,6 +8,7 @@ from typing import Any, Iterable, Iterator
 import more_itertools
 import open_clip
 import torch
+import torch.nn.functional as F
 import torch.utils
 from PIL import Image
 
@@ -18,8 +19,9 @@ from ...common.utils import setup_logging
 setup_logging()
 logger = logging.getLogger("services.analysis.openclip.extract")
 
-# Suppress PIL TiffImagePlugin DEBUG messages
+# Suppress PIL DEBUG messages
 logging.getLogger("PIL.TiffImagePlugin").setLevel(logging.WARNING)
+logging.getLogger("PIL.PngImagePlugin").setLevel(logging.WARNING)
 
 
 class FrameListDataset(torch.utils.data.Dataset):
@@ -189,6 +191,9 @@ class OpenCLIPExtractor(BaseFrameExtractor):
             for frames in dataloader:
                 frames = frames.to(self.device)
                 frame_embeddings = self.model.encode_image(frames).float()
+
+                # Normalize embeddings to unit length
+                frame_embeddings = F.normalize(frame_embeddings, p=2, dim=1)
 
                 # Frame ID will be empty as we don't have it in this context
                 # `run` method is expected to handle the ID assignment
