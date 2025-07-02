@@ -4,10 +4,12 @@ from typing import Any
 import numpy as np
 import torch
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 from torch.nn import functional as F
 from transformers import AutoModel, AutoTokenizer
 
 app = Flask(__name__)
+CORS(app)
 
 
 class CLIPQueryEncoder:
