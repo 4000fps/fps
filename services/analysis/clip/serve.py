@@ -1,82 +1,62 @@
-import argparse
+import os
 from typing import Any
 
-import numpy as np
 import torch
-from flask import Flask, jsonify, request
-from flask_cors import CORS
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from torch.nn import functional as F
 from transformers import AutoModel, AutoTokenizer
 
-app = Flask(__name__)
-CORS(app)
+# Config env variables
+MODEL_NAME = os.getenv("MODEL_NAME", "openai/clip-vit-large-patch14")
+NORMALIZE = os.getenv("NORMALIZE", "true").lower() != "false"
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class CLIPQueryEncoder:
     def __init__(self, model_name: str) -> None:
-        device = "cpu"
-        self.model: Any = AutoModel.from_pretrained(model_name).to(device)
         self.tokenizer: Any = AutoTokenizer.from_pretrained(model_name)
+        self.model: Any = AutoModel.from_pretrained(model_name).to(DEVICE)
+        self.model.eval()
 
-    def get_text_embedding(self, query: str, normalized: bool = False) -> np.ndarray:
+    def get_text_embedding(self, query: str, normalized: bool = True) -> list[float]:
         with torch.no_grad():
-            inputs = self.tokenizer(query, padding=True, return_tensors="pt")
-            text_features = self.model.get_text_features(**inputs)
+            inputs = self.tokenizer(query, padding=True, return_tensors="pt").to(DEVICE)
+            text_embeddings = self.model.get_text_features(**inputs)
             if normalized:
-                text_features = F.normalize(text_features, dim=-1)
-            text_features = text_features.numpy().squeeze()
-        return text_features
+                text_embeddings = F.normalize(text_embeddings, dim=-1)
+            return text_embeddings.squeeze().cpu().numpy().tolist()
 
 
-@app.route("/", methods=["GET"])
-def index():
-    return "", 200
+qe = CLIPQueryEncoder(MODEL_NAME)
+
+app = FastAPI(title="clip-openai encoder")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
-@app.route("/ping", methods=["GET"])
+class QueryRequest(BaseModel):
+    query: str
+
+
+@app.get("/ping")
 def ping():
-    return "pong", 200
+    return {"message": "pong"}
 
 
-@app.route("/encode", methods=["GET", "POST"])
-def encode():
-    if request.method == "POST" and request.is_json:
-        query = request.json.get("query", "")  # type: ignore[no-untyped-call]
-    else:
-        query = request.args.get("query", "")
-
+@app.post("/encode")
+def encode(request: QueryRequest):
+    query = request.query.strip()
     if not query:
-        return jsonify({"error": "Query parameter is required"}), 400
-
-    query_embedding = qe.get_text_embedding(query, normalized=True)
-    result = jsonify({"query": query, "embedding": query_embedding.tolist()})
-    result.status_code = 200
-    return result
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Service for query feature extraction for CLIP models."
-    )
-
-    parser.add_argument(
-        "--host", default="0.0.0.0", help="IP address to use for binding"
-    )
-    parser.add_argument("--port", default="8080", help="Port to use for binding")
-    parser.add_argument(
-        "--model-name",
-        default="openai/clip-vit-base-patch16",
-        help="Name of the CLIP model to use",
-    )
-    parser.add_argument(
-        "--no-normalized",
-        action="store_false",
-        dest="normalized",
-        default=True,
-        help="Whether to normalize features or not",
-    )
-    args = parser.parse_args()
-
-    qe = CLIPQueryEncoder(args.model_name)
-
-    app.run(debug=False, host=args.host, port=args.port)
+        raise HTTPException(status_code=400, detail="Query cannot be empty.")
+    try:
+        embedding = qe.get_text_embedding(query, normalized=NORMALIZE)
+        return {"embedding": embedding}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
