@@ -1,89 +1,102 @@
 import argparse
-import logging
 
 import open_clip
 import torch
 import torch.nn.functional as F
-from flask import Flask, jsonify, request
-from flask_cors import CORS
-
-from ...common.utils import setup_logging
-
-setup_logging()
-logger = logging.getLogger("services.analysis.openclip.serve")
-
-app = Flask(__name__)
-CORS(app)
+import uvicorn
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 
 class OpenCLIPQueryEncoder:
-    def __init__(self, model_name: str) -> None:
-        self.device = "cpu"
-        self.model, _, _ = open_clip.create_model_and_transforms(model_name)
+    def __init__(self, model_name: str, pretrained: str) -> None:
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        model, _, _ = open_clip.create_model_and_transforms(
+            model_name, pretrained=pretrained, device=self.device
+        )
+        model = torch.compile(model)
         self.tokenizer = open_clip.get_tokenizer(model_name)
+        self.model = model.eval()  # type: ignore[misc]
 
-    def encode(self, query: str, normalized: bool = False) -> list[float]:
+    def encode(self, query: str) -> list[float]:
         with torch.no_grad():
-            query_token = self.tokenizer(
-                query, context_length=self.model.context_length
-            )
-            query_embedding = self.model.encode_text(query_token).float()
-            if normalized:
-                query_embedding = F.normalize(query_embedding, dim=-1)
+            tokens = self.tokenizer(
+                query,
+                context_length=self.model.context_length,
+            ).to(self.device)
+            embeddings = self.model.encode_text(tokens).float()
+            embeddings = F.normalize(embeddings, dim=-1, p=2)
 
-            return query_embedding.cpu().tolist()[0]
-
-
-@app.route("/", methods=["GET"])
-def index():
-    return "", 200
+            return embeddings.cpu().squeeze().tolist()
 
 
-@app.route("/ping", methods=["GET"])
-def ping():
-    return "pong", 200
+class QueryRequest(BaseModel):
+    query: str
 
 
-@app.route("/encode", methods=["GET", "POST"])
-def encode():
-    if request.method == "POST" and request.is_json:
-        query = request.json.get("query", "")  # type: ignore[no-untyped-call]
-    else:
-        query = request.args.get("query", "")
-    if not query:
-        return jsonify({"error": "Query parameter is required"}), 400
+def create_app(model_name: str, pretrained: str, title: str) -> FastAPI:
+    app = FastAPI(title=title)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-    query_embedding = qe.encode(query, normalized=args.normalized)
-    result = jsonify({"query": query, "embedding": query_embedding})
-    result.status_code = 200
-    return result
+    encoder = OpenCLIPQueryEncoder(model_name, pretrained)
+    app.state.encoder = encoder
+
+    @app.get("/ping")
+    def ping():
+        return {"message": "pong"}
+
+    @app.post("/encode")
+    def encode(request: QueryRequest):
+        query = request.query.strip()
+        if not query:
+            raise HTTPException(status_code=400, detail="Query cannot be empty.")
+        try:
+            embedding = encoder.encode(query)
+            return {"embedding": embedding}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    return app
 
 
 if __name__ == "__main__":
-    # Set up parser for command line arguments
-    parser = argparse.ArgumentParser("OpenCLIP Query Encoder Service")
+    parser = argparse.ArgumentParser(description="openclip encoder service")
     parser.add_argument(
-        "--host", default="0.0.0.0", help="IP address to use for binding"
-    )
-    parser.add_argument("--port", default="5000", help="Port to use for binding")
-    parser.add_argument(
-        "--model-name",
-        default="ViT-B-32",
+        "--model",
         type=str,
-        choices=[
-            "ViT-B-32",
-            "ViT-L-14",
-        ],
-        help="Name of the OpenCLIP model to use",
+        choices=["laion", "datacomp"],
+        default="laion",
+        help="model name to use",
     )
     parser.add_argument(
-        "--normalized",
-        action="store_true",
-        dest="normalized",
-        default=True,
-        help="Whether to normalize the query embedding",
+        "--port",
+        type=int,
+        default=8000,
+        help="port to run the server on",
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="0.0.0.0",
+        help="host to run the server on",
     )
     args = parser.parse_args()
 
-    qe = OpenCLIPQueryEncoder(args.model_name)
-    app.run(debug=False, host=args.host, port=args.port)
+    if args.model == "laion":
+        model_name = "ViT-L-14"
+        pretrained = "laion2b_s32b_b82k"
+        title = "clip-laion encoder"
+    else:
+        model_name = "ViT-L-14"
+        pretrained = "datacomp_xl_s13b_b90k"
+        title = "clip-datacomp encoder"
+
+    app = create_app(model_name, pretrained, title)
+
+    uvicorn.run(app, host=args.host, port=args.port)
