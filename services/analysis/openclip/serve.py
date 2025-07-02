@@ -58,7 +58,7 @@ def create_app(model_name: str, pretrained: str, title: str) -> FastAPI:
             raise HTTPException(status_code=400, detail="Query cannot be empty.")
         try:
             embedding = encoder.encode(query)
-            return {"embedding": embedding}
+            return {"embedding": embedding, "length": len(embedding)}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
