@@ -8,6 +8,7 @@ dependencies = [
     "av>=14.4.0",
     "easydict>=1.13",
     "faiss-cpu>=1.11.0",
+    "fastapi>=0.115.14",
     "flask>=3.1.1",
     "flask-cors>=6.0.1",
     "h5py>=3.14.0",
@@ -20,4 +21,5 @@ dependencies = [
     "scikit-learn>=1.7.0",
     "torch>=2.7.1",
     "transformers>=4.53.0",
+    "uvicorn>=0.35.0",
 ]
