@@ -17,6 +17,8 @@ class ObjectRecord:
         None  # Optional bounding boxes for detected objects
     )
     labels: list[str] | None = None  # Optional labels for the detected objects
+    entities: list[str] | None = None  # Optional entities for the detected objects
+    names: list[str] | None = None  # Optional names for the detected objects
     monochrome: float | None = None  # Optional monochromaticity score
     cluster_id: str | None = None  # Optional cluster ID for grouping
 
